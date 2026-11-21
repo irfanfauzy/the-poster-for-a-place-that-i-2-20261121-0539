@@ -1,50 +1,71 @@
-// the-poster-for-a-place-that-i-2-20261121-0539 — "VELDRIA — The City That Sails at Dusk".
+// VELDRIA — The City That Sails at Dusk
+// Entry program for the make.fun poster competition
+// (the-poster-for-a-place-that-i-2-20261121-0539).
 //
-// A travel poster for a place that does not exist, drawn from scratch in
-// this session with Python/PIL (draw_poster.py, DejaVu fonts, vector
-// shapes only, no photos, no network) and bundled next to this file as
-// entry.png (1024x1024, under the 1,048,576-byte limit).
-// At run time there is no network and nothing to compute, so this
-// program only moves those exact bytes into the grader's output
-// folder. Running it twice therefore always produces the same file.
+// The artwork: a 1024x1024 poster of Veldria, a harbour city that sails
+// at dusk — lantern-lit ships, a violet-orange sky, and the skyline
+// reflected in the water. It was rendered by draw_poster.py (Pillow,
+// standard library only) and bundled as entry.png next to this script.
 //
-// Local check:
-//   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+// This program's only job is to deliver that file, intact, into the
+// grader's output folder: verify it is really a PNG, keep it under the
+// size limit, copy it, and prove the copy is byte-identical by reading
+// it back and comparing every byte. It makes no network calls and uses
+// only the Node standard library, so it runs anywhere Node 22+ is
+// installed, from any working directory.
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { copyFileSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Folder holding this script (and entry.png), resolved from the module
-// URL rather than the working directory, so the copy works wherever
-// the program is launched from.
+// PNG files always start with these eight magic bytes.
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+// Maximum allowed size of the bundled poster: 1 MiB.
+const MAX_BYTES = 1_048_576;
+
+const OUTPUT_FILE = "entry.png";
+
+// The bundled poster lives next to this script, so resolve it from the
+// script's own location rather than the working directory.
 const scriptDir = dirname(fileURLToPath(import.meta.url));
-const sourceImage = resolve(scriptDir, "entry.png");
+const sourcePath = join(scriptDir, OUTPUT_FILE);
 
-// The grader sets MAKEFUN_OUTPUT_DIR; outside it, /output is the target.
-const targetDir = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
-const targetImage = resolve(targetDir, "entry.png");
+// The grader tells us where to write via MAKEFUN_OUTPUT_DIR;
+// fall back to /output when it is not set.
+const outputDir = process.env.MAKEFUN_OUTPUT_DIR || "/output";
+const outputPath = join(outputDir, OUTPUT_FILE);
 
-mkdirSync(targetDir, { recursive: true });
-const imageBytes = readFileSync(sourceImage);
-
-// Sanity check on the bundled file itself: it must be a PNG (the gate
-// tells PNG and JPEG apart by their first bytes), so refuse anything
-// else before copying.
-const pngMagic = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-if (!imageBytes.subarray(0, 8).equals(pngMagic)) {
-  throw new Error("entry.png is not a PNG file");
+function fail(message: string): never {
+  throw new Error(message);
 }
-if (imageBytes.length > 1048576) {
-  throw new Error(`entry.png is ${imageBytes.length} bytes, over the 1,048,576-byte limit`);
-}
-writeFileSync(targetImage, imageBytes);
 
-// Read the copy back and compare it byte for byte: the grader runs
-// this program twice and expects identical output both times, so any
-// mismatch here should fail loudly instead of passing silently.
-const writtenBack = readFileSync(targetImage);
-if (!writtenBack.equals(imageBytes)) {
-  throw new Error("entry.png copy does not match the bundled image");
+// --- Verify the bundled file before copying ---------------------------
+
+const stats = statSync(sourcePath);
+if (stats.size > MAX_BYTES) {
+  fail(
+    `Bundled poster is ${stats.size} bytes, over the ${MAX_BYTES} byte limit.`,
+  );
 }
-console.log(`wrote ${targetImage} (${imageBytes.length} bytes)`);
+
+const source = readFileSync(sourcePath);
+if (!source.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC)) {
+  fail("Bundled entry.png is not a PNG (magic bytes do not match).");
+}
+
+// --- Copy it into the output folder ------------------------------------
+
+mkdirSync(outputDir, { recursive: true });
+copyFileSync(sourcePath, outputPath);
+
+// --- Read the copy back and compare byte for byte ----------------------
+
+const written = readFileSync(outputPath);
+if (!written.equals(source)) {
+  fail(`Output ${outputPath} does not match the bundled poster byte for byte.`);
+}
+
+console.log(
+  `Wrote ${outputPath} (${written.length} bytes) — verified PNG, byte-identical to bundled ${OUTPUT_FILE}.`,
+);

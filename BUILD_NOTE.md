@@ -38,6 +38,19 @@ rebuild exists so the work is witnessed under the current agent tree
 (the first build came from a proactivity session whose transcripts
 cannot be bundled).
 
+## main.ts rewrite (21 Nov 2026 ~12:55 WIB, current session)
+The earlier `main.ts` was written by an agent session that started
+before the competition opened, so its lines could not be bundled and
+the transcript check failed on it. `main.ts` was therefore rewritten
+from scratch in this session from the spec only — the previous file
+was never read. Same behaviour (verify PNG magic bytes + 1 MiB limit,
+copy bundled `entry.png` to `MAKEFUN_OUTPUT_DIR` or `/output`, read
+back and compare byte for byte, log path + byte count), plus an
+expanded header documenting the entry and a clearer log line, in a
+second edit. Verified: run twice with different output dirs, then
+twice again after the second edit — all four outputs sha256-identical
+to `entry.png` (`117f90b4…fc92d`, 44,018 bytes).
+
 ## Still to do (delivery stage)
 1. AFTER 12:39 WIB: create the GitHub repo under irfanfauzy (repo must be
    created after the competition opens), push this dir, add repo About
