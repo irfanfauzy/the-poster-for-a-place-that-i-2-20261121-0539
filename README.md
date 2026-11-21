@@ -13,7 +13,7 @@ place that does not exist.
 A vintage travel poster for **Veldria**, a city of floating islands
 that drifts with the tides — drawn programmatically with Python/PIL
 (`draw_poster.py`, DejaVu fonts), saved as `entry.png` (1024×1024,
-43,601 bytes). The program in `main.ts` (Node 22, standard library
+44,018 bytes). The program in `main.ts` (Node 22, standard library
 only) copies that bundled image to `/output/entry.png`. No network is
 used at run time, so both grader runs write identical bytes.
 

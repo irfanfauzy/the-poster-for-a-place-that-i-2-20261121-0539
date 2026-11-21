@@ -29,6 +29,15 @@ that never stays put." Visually verified by reading the rendered PNG.
   times (see below); PNG magic + size limit checked in main.ts.
 - `.makefun/owner.json` present (wallet 49RuRd4pEQdnZwA7Qsv5DRHmjqyT8o8NaNk8KhWG5QuV).
 
+## Rebuild (21 Nov 2026 ~12:45 WIB, current session)
+`draw_poster.py` was rewritten from the design spec in this session
+(same poster, fresh implementation) and `entry.png` regenerated:
+1024x1024, 44,018 bytes. `main.ts` run twice with different
+`MAKEFUN_OUTPUT_DIR` values — identical sha256 both times. This
+rebuild exists so the work is witnessed under the current agent tree
+(the first build came from a proactivity session whose transcripts
+cannot be bundled).
+
 ## Still to do (delivery stage)
 1. AFTER 12:39 WIB: create the GitHub repo under irfanfauzy (repo must be
    created after the competition opens), push this dir, add repo About

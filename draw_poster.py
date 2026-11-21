@@ -1,216 +1,260 @@
 #!/usr/bin/env python3
-"""Draw the travel poster for VELDRIA, a place that does not exist.
+"""Draw "VELDRIA - The City That Sails at Dusk", a vintage travel poster.
 
 make.fun competition `the-poster-for-a-place-that-i-2-20261121-0539`:
-a program that writes one image to /output/entry.png — a travel poster
-for a place that does not exist. Output must be at most 1,048,576 bytes
-and 1024x1024 pixels.
+a poster for a place that does not exist. The program in this repo
+(main.ts) copies the bundled entry.png to /output/entry.png; this
+script is how that PNG is produced, from scratch, with Python/PIL.
 
-The poster is drawn from scratch with Python/PIL (DejaVu fonts, vector
-shapes only, no photos, no network). `main.ts` copies the bundled
-entry.png to the grader's output folder, deterministically.
+Everything is vector shapes and text only (DejaVu fonts from the
+system font directory). No photos, no network, no randomness beyond a
+fixed seed, so re-running the script reproduces the same image.
 
-Local check:
-    python3 draw_poster.py && ls -l entry.png
-    mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+    python3 draw_poster.py        # writes entry.png (1024x1024)
 """
-import math
+import random
+
 from PIL import Image, ImageDraw, ImageFont
 
-W = H = 1024
-CREAM = (245, 238, 221)
-INK = (32, 38, 58)
-TEAL_DARK = (23, 52, 74)
-RUST = (176, 92, 52)
-GOLD = (232, 178, 90)
-SUN = (247, 215, 116)
-
+SIZE = 1024
 FONT_DIR = "/usr/share/fonts/truetype/dejavu/"
-serif_bold = lambda s: ImageFont.truetype(FONT_DIR + "DejaVuSerif-Bold.ttf", s)
-serif = lambda s: ImageFont.truetype(FONT_DIR + "DejaVuSerif.ttf", s)
-serif_it = lambda s: ImageFont.truetype(FONT_DIR + "DejaVuSerif.ttf", s)  # no Italic file on this VM; plain Serif stands in
-sans = lambda s: ImageFont.truetype(FONT_DIR + "DejaVuSans.ttf", s)
-sans_bold = lambda s: ImageFont.truetype(FONT_DIR + "DejaVuSans-Bold.ttf", s)
+
+# Palette: cream paper, dusk indigo sky, ember horizon, sea teal.
+PAPER = (246, 239, 222)
+INK = (30, 36, 56)
+SKY_TOP = (26, 40, 74)
+SKY_MID = (88, 98, 116)
+SKY_LOW = (216, 126, 64)
+SEA_TOP = (48, 86, 104)
+SEA_BOT = (15, 38, 58)
+SUN_GOLD = (248, 214, 118)
+GOLD = (233, 179, 92)
+RUST = (178, 94, 54)
+LEAF = (112, 148, 94)
+LEAF_DARK = (86, 122, 74)
+ROCK = (76, 60, 50)
+ROCK_LIT = (94, 74, 60)
+WALL = (245, 233, 206)
+FOAM = (180, 216, 226)
+
+# The framed scene area; the title band sits below it.
+SCENE = (30, 30, 994, 688)
+SEA_LINE = 588
 
 
-def lerp(a, b, t):
-    return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
+def serif(size, bold=False):
+    name = "DejaVuSerif-Bold.ttf" if bold else "DejaVuSerif.ttf"
+    return ImageFont.truetype(FONT_DIR + name, size)
 
 
-def draw_spaced(draw, cx, y, text, font, fill, tracking=10):
-    """Draw centred text with letter tracking."""
+def blend(c1, c2, t):
+    return tuple(round(c1[i] + (c2[i] - c1[i]) * t) for i in range(3))
+
+
+def tracked_text(draw, cx, y, text, font, fill, gap):
+    """Draw `text` centred on `cx`, with `gap` px between letters."""
     widths = [draw.textlength(ch, font=font) for ch in text]
-    total = sum(widths) + tracking * (len(text) - 1)
+    total = sum(widths) + gap * (len(text) - 1)
     x = cx - total / 2
     for ch, w in zip(text, widths):
         draw.text((x, y), ch, font=font, fill=fill)
-        x += w + tracking
+        x += w + gap
+
+
+def sky(draw):
+    x0, y0, x1, y1 = SCENE
+    for y in range(y0, y1):
+        t = (y - y0) / (y1 - y0)
+        if t < 0.5:
+            colour = blend(SKY_TOP, SKY_MID, t / 0.5)
+        else:
+            colour = blend(SKY_MID, SKY_LOW, (t - 0.5) / 0.5)
+        draw.line([(x0, y), (x1, y)], fill=colour)
+
+
+def stars(draw, rng):
+    x0, y0, x1, _ = SCENE
+    for _ in range(80):
+        x = rng.randint(x0 + 10, x1 - 10)
+        y = rng.randint(y0 + 10, y0 + 210)
+        r = rng.choice([1, 1, 1, 2])
+        draw.ellipse([x - r, y - r, x + r, y + r],
+                     fill=(255, 243, 210, 190))
+
+
+def sun(draw):
+    cx, cy, r = 700, 478, 92
+    for radius, alpha in ((158, 22), (128, 36), (108, 55)):
+        draw.ellipse([cx - radius, cy - radius, cx + radius, cy + radius],
+                     fill=SUN_GOLD + (alpha,))
+    draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=SUN_GOLD)
+    draw.ellipse([cx - r, cy - r, cx + r, cy + r],
+                 outline=(188, 118, 48), width=3)
+
+
+def cloud(draw, cx, cy, scale, alpha):
+    tone = (245, 228, 198, alpha)
+    puffs = [(-46, 6, 24), (-14, -12, 32), (20, -8, 28), (48, 8, 20)]
+    for dx, dy, r in puffs:
+        s = scale / 40
+        draw.ellipse([cx + dx * s - r * s, cy + dy * s - r * s,
+                      cx + dx * s + r * s, cy + dy * s + r * s], fill=tone)
+    draw.rectangle([cx - 58 * scale / 40, cy + 2,
+                    cx + 58 * scale / 40, cy + 14 * scale / 40], fill=tone)
+
+
+def sea(draw):
+    x0, _, x1, y1 = SCENE
+    for y in range(SEA_LINE, y1):
+        t = (y - SEA_LINE) / (y1 - SEA_LINE)
+        draw.line([(x0, y), (x1, y)], fill=blend(SEA_TOP, SEA_BOT, t))
+    # Broken golden reflection under the sun.
+    for i, (y, w) in enumerate([(598, 118), (614, 92), (632, 126),
+                                (652, 80), (672, 104)]):
+        draw.rectangle([700 - w // 2, y, 700 + w // 2, y + 5],
+                       fill=(248, 202, 112, 195 - i * 28))
+    # Wave strokes.
+    for y in (604, 628, 656, 680):
+        for x in range(x0 + 24, x1 - 24, 88):
+            draw.arc([x, y, x + 54, y + 14], 200, 340,
+                     fill=(212, 226, 226, 150), width=3)
+
+
+def floating_island(draw, cx, base, width, height):
+    """A rock that tapers to a point below, capped with green turf."""
+    half = width // 2
+    tip = base + int(height * 1.3)
+    draw.polygon([(cx - half, base), (cx - half // 2, base + height),
+                  (cx, tip), (cx + half // 2, base + height),
+                  (cx + half, base)], fill=ROCK)
+    draw.polygon([(cx - half, base), (cx - half // 2, base + height),
+                  (cx, tip)], fill=ROCK_LIT)
+    draw.ellipse([cx - half - 8, base - 16, cx + half + 8, base + 10],
+                 fill=LEAF_DARK)
+    draw.ellipse([cx - half - 8, base - 16, cx + half + 8, base],
+                 fill=LEAF)
+
+
+def cottage(draw, x, y, scale=1.0):
+    w, h = int(36 * scale), int(26 * scale)
+    draw.rectangle([x, y, x + w, y + h], fill=WALL, outline=INK, width=2)
+    draw.polygon([(x - 4, y), (x + w // 2, y - int(18 * scale)),
+                  (x + w + 4, y)], fill=RUST, outline=INK)
+    draw.rectangle([x + w // 2 - 4, y + h - 12, x + w // 2 + 4, y + h],
+                   fill=INK)
+    for wx in (6, w - 13):
+        draw.rectangle([x + wx, y + 6, x + wx + 7, y + 13],
+                       fill=SUN_GOLD)
+
+
+def lighthouse(draw, x, base, scale=1.0):
+    w, h = int(22 * scale), int(66 * scale)
+    draw.rectangle([x, base - h, x + w, base], fill=WALL, outline=INK,
+                   width=2)
+    for i in range(3):
+        yy = base - h + i * (h // 3)
+        draw.rectangle([x, yy, x + w, yy + h // 6], fill=RUST)
+    draw.rectangle([x - 4, base - h - 12, x + w + 4, base - h], fill=INK)
+    draw.ellipse([x + 3, base - h - 24, x + w - 3, base - h - 10],
+                 fill=SUN_GOLD)
+    # The lamp's beam, sweeping right across the dusk.
+    draw.polygon([(x + w // 2, base - h - 16), (x + w + 150, base - h - 62),
+                  (x + w + 150, base - h + 6)],
+                 fill=(248, 216, 118, 70))
+
+
+def waterfall(draw, x, y_top, y_bot):
+    draw.rectangle([x, y_top, x + 10, y_bot], fill=FOAM)
+    for y in range(y_top + 8, y_bot, 16):
+        draw.line([(x + 2, y), (x + 8, y + 8)],
+                  fill=(255, 255, 255, 220), width=2)
+
+
+def airship(draw):
+    cx, cy = 428, 246
+    draw.ellipse([cx - 132, cy - 36, cx + 132, cy + 36], fill=GOLD,
+                 outline=INK, width=3)
+    # Stripes following the curve of the envelope.
+    for off in (-72, -22, 28, 78):
+        draw.arc([cx + off - 26, cy - 36, cx + off + 26, cy + 36],
+                 270, 90, fill=RUST, width=6)
+    # Tail fins.
+    draw.polygon([(cx + 96, cy - 28), (cx + 152, cy - 54),
+                  (cx + 152, cy - 8)], fill=RUST, outline=INK)
+    draw.polygon([(cx + 96, cy + 28), (cx + 152, cy + 54),
+                  (cx + 152, cy + 8)], fill=RUST, outline=INK)
+    # Gondola with lit windows, hanging below the envelope.
+    draw.rectangle([cx - 52, cy + 36, cx + 52, cy + 62], fill=(98, 68, 46),
+                   outline=INK, width=2)
+    for wx in range(cx - 40, cx + 48, 22):
+        draw.ellipse([wx, cy + 44, wx + 10, cy + 54], fill=SUN_GOLD)
+    draw.line([(cx, cy + 62), (cx, cy + 78)], fill=INK, width=2)
+    draw.ellipse([cx - 5, cy + 78, cx + 5, cy + 88], fill=INK)
+
+
+def birds(draw):
+    for bx, by, s in ((176, 296, 14), (238, 258, 11), (618, 206, 12),
+                      (558, 318, 9), (878, 296, 11)):
+        draw.arc([bx - s, by - s // 2, bx, by + s // 2], 200, 340,
+                 fill=INK, width=3)
+        draw.arc([bx, by - s // 2, bx + s, by + s // 2], 200, 340,
+                 fill=INK, width=3)
+
+
+def title_band(draw):
+    x0, _, x1, _ = SCENE
+    draw.line([(x0, 722), (x1, 722)], fill=INK, width=3)
+    draw.line([(x0, 730), (x1, 730)], fill=RUST, width=2)
+    tracked_text(draw, 512, 752, "VELDRIA", serif(118, bold=True), INK, 26)
+    tracked_text(draw, 512, 888, "THE CITY THAT SAILS AT DUSK",
+                 serif(30), RUST, 8)
+    draw.line([(150, 938), (380, 938)], fill=INK, width=2)
+    draw.line([(644, 938), (874, 938)], fill=INK, width=2)
+    draw.ellipse([502, 930, 522, 950], fill=GOLD, outline=INK, width=2)
+    draw.text((512, 960),
+              "No roads. Only tides.  \u2022  Visit the island that never stays put.",
+              font=serif(21), fill=INK, anchor="ma")
 
 
 def main():
-    img = Image.new("RGB", (W, H), CREAM)
-    d = ImageDraw.Draw(img, "RGBA")
-
-    # ---- scene: sky gradient, (28,28)-(996,700) ----
-    sx0, sy0, sx1, sy1 = 28, 28, 996, 700
-    top = (24, 40, 72)      # deep dusk indigo
-    mid = (84, 96, 110)     # hazy blue
-    hor = (214, 122, 62)    # ember horizon
-    for y in range(sy0, sy1):
-        t = (y - sy0) / (sy1 - sy0)
-        if t < 0.55:
-            c = lerp(top, mid, t / 0.55)
-        else:
-            c = lerp(mid, hor, (t - 0.55) / 0.45)
-        d.line([(sx0, y), (sx1, y)], fill=c)
-    d.rectangle([sx0, sy0, sx1, sy1], outline=INK, width=3)
-
-    # stars in the upper sky
-    import random
+    img = Image.new("RGB", (SIZE, SIZE), PAPER)
+    draw = ImageDraw.Draw(img, "RGBA")
     rng = random.Random(20261121)
-    for _ in range(70):
-        x = rng.randint(sx0 + 8, sx1 - 8)
-        y = rng.randint(sy0 + 8, sy0 + 220)
-        r = rng.choice([1, 1, 2])
-        d.ellipse([x - r, y - r, x + r, y + r], fill=(255, 244, 214, 200))
 
-    # sun + halo, low over the horizon
-    sun_cx, sun_cy, sun_r = 712, 486, 88
-    for rr, alpha in ((150, 26), (125, 40), (105, 60)):
-        d.ellipse([sun_cx - rr, sun_cy - rr, sun_cx + rr, sun_cy + rr],
-                  fill=SUN + (alpha,))
-    d.ellipse([sun_cx - sun_r, sun_cy - sun_r, sun_cx + sun_r, sun_cy + sun_r],
-              fill=SUN)
-    d.ellipse([sun_cx - sun_r, sun_cy - sun_r, sun_cx + sun_r, sun_cy + sun_r],
-              outline=(190, 120, 50), width=3)
+    sky(draw)
+    stars(draw, rng)
+    sun(draw)
+    cloud(draw, 218, 168, 40, 170)
+    cloud(draw, 878, 128, 30, 150)
+    cloud(draw, 478, 108, 24, 130)
+    sea(draw)
 
-    # clouds: flat-bottomed vintage puffs
-    def cloud(cx, cy, s, tone):
-        for dx, dy, r in ((-52, 8, 26), (-18, -12, 34), (22, -6, 30), (52, 10, 22)):
-            d.ellipse([cx + dx * s / 40 - r * s / 40, cy + dy * s / 40 - r * s / 40,
-                       cx + dx * s / 40 + r * s / 40, cy + dy * s / 40 + r * s / 40],
-                      fill=tone)
-        d.rectangle([cx - 62 * s / 40, cy + 2, cx + 62 * s / 40, cy + 16 * s / 40],
-                    fill=tone)
-    cloud(220, 170, 40, (244, 226, 196, 170))
-    cloud(880, 130, 30, (244, 226, 196, 150))
-    cloud(480, 110, 24, (232, 200, 170, 130))
+    # Three floating islands: lighthouse island, cottage island, far islet.
+    floating_island(draw, 248, 468, 300, 92)
+    lighthouse(draw, 194, 468)
+    cottage(draw, 238, 436)
+    cottage(draw, 298, 442, 0.85)
+    waterfall(draw, 328, 478, SEA_LINE)
 
-    # ---- sea at the bottom of the scene ----
-    sea_y = 596
-    for y in range(sea_y, sy1):
-        t = (y - sea_y) / (sy1 - sea_y)
-        d.line([(sx0, y), (sx1, y)], fill=lerp((46, 84, 102), (16, 40, 60), t))
-    # sun reflection: broken golden column
-    for i, (yy, ww) in enumerate([(606, 120), (622, 96), (640, 130), (660, 84), (680, 110)]):
-        d.rectangle([sun_cx - ww // 2, yy, sun_cx + ww // 2, yy + 5],
-                    fill=(247, 200, 110, 200 - i * 25))
-    # wave strokes
-    for yy in (612, 636, 664, 688):
-        for xx in range(sx0 + 20, sx1 - 20, 86):
-            d.arc([xx, yy, xx + 56, yy + 14], 200, 340,
-                  fill=(210, 225, 225, 160), width=3)
+    floating_island(draw, 798, 518, 260, 80)
+    cottage(draw, 740, 488)
+    cottage(draw, 804, 494, 0.9)
+    cottage(draw, 854, 498, 0.75)
+    waterfall(draw, 878, 526, SEA_LINE)
 
-    # ---- floating islands ----
-    def island(cx, base_y, w, h, scale=1.0):
-        # rock: tapered underside
-        rock = [(cx - w // 2, base_y), (cx - w // 4, base_y + h),
-                (cx, base_y + int(h * 1.25)), (cx + w // 4, base_y + h),
-                (cx + w // 2, base_y)]
-        d.polygon(rock, fill=(74, 58, 48))
-        d.polygon([(cx - w // 2, base_y), (cx - w // 4, base_y + h),
-                   (cx, base_y + int(h * 1.25))], fill=(92, 72, 58))
-        # grassy cap
-        d.ellipse([cx - w // 2 - 6, base_y - 14, cx + w // 2 + 6, base_y + 12],
-                  fill=(86, 122, 74))
-        d.ellipse([cx - w // 2 - 6, base_y - 14, cx + w // 2 + 6, base_y + 2],
-                  fill=(110, 146, 92))
+    floating_island(draw, 498, 418, 130, 46)
+    cottage(draw, 476, 396, 0.62)
 
-    def house(x, y, s=1.0):
-        bw, bh = int(34 * s), int(26 * s)
-        d.rectangle([x, y, x + bw, y + bh], fill=(244, 232, 205),
-                    outline=INK, width=2)
-        d.polygon([(x - 4, y), (x + bw // 2, y - int(18 * s)), (x + bw + 4, y)],
-                  fill=RUST, outline=INK)
-        d.rectangle([x + bw // 2 - 4, y + bh - 12, x + bw // 2 + 4, y + bh],
-                    fill=INK)
-        d.rectangle([x + 6, y + 6, x + 12, y + 12], fill=(247, 215, 116))
-        d.rectangle([x + bw - 12, y + 6, x + bw - 6, y + 12], fill=(247, 215, 116))
+    airship(draw)
+    birds(draw)
 
-    def lighthouse(x, y, s=1.0):
-        w, h = int(20 * s), int(64 * s)
-        d.rectangle([x, y - h, x + w, y], fill=(244, 238, 221), outline=INK, width=2)
-        for i in range(3):
-            yy = y - h + i * (h // 3)
-            d.rectangle([x, yy, x + w, yy + h // 6], fill=RUST)
-        d.rectangle([x - 4, y - h - 12, x + w + 4, y - h], fill=INK)
-        d.ellipse([x + 2, y - h - 24, x + w - 2, y - h - 10], fill=SUN)
-        # light beam
-        d.polygon([(x + w // 2, y - h - 16), (x + w + 150, y - h - 60),
-                   (x + w + 150, y - h + 8)], fill=(247, 215, 116, 70))
+    title_band(draw)
 
-    def waterfall(x, y0, y1):
-        d.rectangle([x, y0, x + 10, y1], fill=(178, 214, 224))
-        for yy in range(y0 + 6, y1, 16):
-            d.line([(x + 2, yy), (x + 8, yy + 8)], fill=(255, 255, 255, 220), width=2)
-
-    # left island with lighthouse
-    island(250, 470, 300, 92)
-    lighthouse(196, 470)
-    house(240, 438, 1.0)
-    house(300, 444, 0.85)
-    waterfall(330, 480, 596)
-    # right island with houses
-    island(800, 520, 260, 80)
-    house(742, 490, 1.0)
-    house(806, 496, 0.9)
-    house(856, 500, 0.75)
-    waterfall(880, 528, 596)
-    # small far island
-    island(500, 420, 130, 46, 0.7)
-    house(478, 398, 0.62)
-
-    # ---- airship ----
-    ax, ay = 430, 250
-    d.ellipse([ax - 130, ay - 34, ax + 130, ay + 34], fill=(232, 178, 90),
-              outline=INK, width=3)
-    d.ellipse([ax - 130, ay - 34, ax + 130, ay + 34], outline=(120, 60, 30), width=2)
-    for stripe_x in (-70, -20, 30, 80):
-        d.arc([ax + stripe_x - 26, ay - 34, ax + stripe_x + 26, ay + 34],
-              270, 90, fill=RUST, width=6)
-    d.polygon([(ax + 96, ay - 26), (ax + 150, ay - 52), (ax + 150, ay - 6)],
-              fill=RUST, outline=INK)
-    d.polygon([(ax + 96, ay + 26), (ax + 150, ay + 52), (ax + 150, ay + 6)],
-              fill=RUST, outline=INK)
-    d.rectangle([ax - 52, ay + 34, ax + 52, ay + 62], fill=(96, 66, 44),
-                outline=INK, width=2)
-    for wx in range(ax - 40, ax + 48, 22):
-        d.ellipse([wx, ay + 42, wx + 10, ay + 52], fill=SUN)
-    d.line([(ax, ay + 62), (ax, ay + 78)], fill=INK, width=2)
-    d.ellipse([ax - 5, ay + 78, ax + 5, ay + 88], fill=INK)
-
-    # birds
-    for bx, by, s in ((180, 300, 14), (240, 260, 11), (620, 210, 12),
-                      (560, 320, 9), (880, 300, 11)):
-        d.arc([bx - s, by - s // 2, bx, by + s // 2], 200, 340, fill=INK, width=3)
-        d.arc([bx, by - s // 2, bx + s, by + s // 2], 200, 340, fill=INK, width=3)
-
-    # ---- title band ----
-    d.line([(sx0, 728), (sx1, 728)], fill=INK, width=3)
-    d.line([(sx0, 736), (sx1, 736)], fill=RUST, width=2)
-    draw_spaced(d, 512, 758, "VELDRIA", serif_bold(118), INK, tracking=26)
-    draw_spaced(d, 512, 892, "THE CITY THAT SAILS AT DUSK",
-                serif(30), RUST, tracking=8)
-    d.line([(150, 940), (380, 940)], fill=INK, width=2)
-    d.line([(644, 940), (874, 940)], fill=INK, width=2)
-    d.ellipse([502, 932, 522, 952], fill=GOLD, outline=INK, width=2)
-    d.text((512, 962), "No roads. Only tides.  •  Visit the island that never stays put.",
-           font=serif_it(21), fill=INK, anchor="ma")
-    # footer strip
-    d.text((512, 1002 - 28 + 6), "", font=sans(10), fill=INK)
-    # thin outer frame
-    d.rectangle([8, 8, 1016, 1016], outline=INK, width=3)
-    d.rectangle([16, 16, 1008, 1008], outline=RUST, width=1)
+    # Scene frame, then the thin double outer border.
+    draw.rectangle([SCENE[0], SCENE[1], SCENE[2], SCENE[3]], outline=INK,
+                   width=3)
+    draw.rectangle([8, 8, 1016, 1016], outline=INK, width=3)
+    draw.rectangle([16, 16, 1008, 1008], outline=RUST, width=1)
 
     img.save("entry.png", format="PNG", optimize=True)
     print("saved entry.png")
